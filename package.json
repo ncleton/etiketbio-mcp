@@ -1,6 +1,6 @@
 {
   "name": "etiketbio-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Unofficial Etiketbio MCP server and CLI: catalogue search, product details and a confirmed shopping cart, backed by a user-owned persistent Camoufox browser session.",
   "license": "MIT",
   "type": "module",

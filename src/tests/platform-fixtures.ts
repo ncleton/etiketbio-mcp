@@ -2,15 +2,8 @@ import type { ShopConfig } from "../client/config.js";
 import { RETAILER } from "../client/retailer.js";
 import { FakeBrowser } from "./fake-browser.js";
 
-export interface Captured {
-  query: string;
-  productUrl: string;
-  expected: { productId: string; name: string; price: number };
-  searchRaw: unknown[];
-  productRaw: Record<string, unknown>;
-  cartEmpty: unknown;
-  cartFilled: { quantity: number; raw: unknown };
-}
+import type { Captured } from "./fake-browser.js";
+export type { Captured };
 
 type RawCart = { total_text: string | null; products: Array<Record<string, unknown>> };
 

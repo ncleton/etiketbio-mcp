@@ -1,4 +1,6 @@
 import type { BrowserAdapter, BrowserTab } from "../client/camoufox.js";
+import type { ShopConfig } from "../client/config.js";
+import { RETAILER } from "../client/retailer.js";
 
 export interface FakeHandlers {
   search(): unknown;
@@ -37,4 +39,38 @@ export class FakeBrowser implements BrowserAdapter {
     }
     throw new Error("Opération inconnue.");
   }
+}
+
+export interface Captured {
+  query: string;
+  productUrl: string;
+  expected: { productId: string; name: string; price: number };
+  searchRaw: unknown[];
+  productRaw: unknown;
+  cartEmpty: unknown;
+  cartFilled: { quantity: number; raw: unknown };
+}
+
+/** Boutique simulée à partir des charges utiles réellement capturées ; cartFor fabrique le panier brut pour une quantité donnée. */
+export function buildShop(data: Captured, scope: Record<string, string>, cartFor: (count: number) => unknown) {
+  const config: ShopConfig = {
+    scope,
+    camoufoxUrl: "http://127.0.0.1:9377",
+    camoufoxUserId: "test-profile-user",
+    camoufoxApiKey: "0123456789abcdefghijklmnopqrstuvwxyzAB",
+  };
+  let quantity = 0;
+  const snapshot = `navigation "Menu"\nlink "Mon compte"\nlink "Panier"\ntext "${RETAILER.label}"\n${Object.values(scope).join("\n")}`;
+  const browser = new FakeBrowser(RETAILER.entryUrl, snapshot, {
+    search: () => data.searchRaw,
+    product: () => data.productRaw,
+    cart: () => cartFor(quantity),
+    mutate: (_productId, target) => { const before = cartFor(quantity); quantity = target; return { before, after: cartFor(quantity), applied: true }; },
+  });
+  return {
+    config,
+    browser,
+    cartQuantity: () => quantity,
+    setCartQuantity: (value: number) => { quantity = value; },
+  };
 }

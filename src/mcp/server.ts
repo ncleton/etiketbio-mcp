@@ -34,7 +34,7 @@ function failure(cause: unknown) {
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: true, idempotentHint: true };
 
 export function createServer(client = new ShopClient()): McpServer {
-  const server = new McpServer({ name: `${RETAILER.id}-mcp`, version: "0.1.0" }, {
+  const server = new McpServer({ name: `${RETAILER.id}-mcp`, version: RETAILER.version }, {
     instructions: `Appelez connect_${RETAILER.slug} avant la première opération. Le compte ${RETAILER.label} ${RETAILER.accountRequired ? "est indispensable" : "est facultatif pour remplir un panier mais nécessaire pour commander"} : si une connexion est proposée, présentez le wizard loopback et ses deux parcours (connexion à un compte existant ou création officielle de compte). Les identifiants, cookies, codes 2FA et CAPTCHA ne transitent jamais dans le MCP. Modes de réception du site : ${RETAILER.fulfillment.join(", ")}. Toute mutation de panier exige une prévisualisation, puis le même outil avec son jeton de confirmation. Aucun outil ne choisit de créneau, ne valide de commande et ne paie.`,
   });
   const confirmations = new ConfirmationStore();

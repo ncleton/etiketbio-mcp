@@ -143,7 +143,7 @@ function productExpression(productUrl: string): string {
     try { data = holder ? JSON.parse(holder.getAttribute("data-product")) : null; } catch (error) { data = null; }
     const button = (form || doc).querySelector("button.add-to-cart, [data-button-action='add-to-cart']");
     let ingredients = null;
-    for (const element of doc.querySelectorAll("h2, h3, h4, h5, h6, strong, b, dt, p, div, li, span")) {
+    for (const element of Array.prototype.slice.call(doc.querySelectorAll("h2, h3, h4, h5, h6, strong, b, dt, p, div, li, span")).reverse()) {
       const own = clean(element.textContent);
       if (/^ingr[ée]dients?\b\s*[:\-]?\s*\S/i.test(own) && own.length < 4000 && element.children.length < 6) { ingredients = own.replace(/^ingr[ée]dients?\b\s*[:\-]?\s*/i, ""); break; }
       if (/^ingr[ée]dients?\s*:?$/i.test(own)) {

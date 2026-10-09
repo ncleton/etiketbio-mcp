@@ -1,4 +1,4 @@
-import type { Captured } from "./platform-fixtures.js";
+import type { Captured } from "./fake-browser.js";
 
 export const captured: Captured = {
   "query": "tofu",

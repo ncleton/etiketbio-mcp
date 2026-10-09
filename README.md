@@ -87,7 +87,7 @@ Dans MCP, le premier appel à `add_to_cart` ou `remove_from_cart` retourne un je
 
 ## Configuration MCP
 
-Exemple recommandé pour un client MCP utilisant directement la release publique `v0.1.0` en `stdio` :
+Exemple recommandé pour un client MCP utilisant directement la release publique `v0.1.1` en `stdio` :
 
 ```json
 {
@@ -96,7 +96,7 @@ Exemple recommandé pour un client MCP utilisant directement la release publique
       "command": "npx",
       "args": [
         "-y",
-        "--package=github:ncleton/etiketbio-mcp#v0.1.0",
+        "--package=github:ncleton/etiketbio-mcp#v0.1.1",
         "etiketbio-mcp"
       ],
       "env": {
