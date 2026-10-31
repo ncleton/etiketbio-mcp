@@ -8,6 +8,12 @@ export interface PrestashopOptions {
   hosts: string[];
   /** Sélecteur CSS supplémentaire pour retrouver le lien produit d’une vignette. */
   linkSelector?: string;
+  /**
+   * Recherche servie par un module AJAX du thème quand la page /recherche du
+   * site renvoie vers l’accueil. « ttblocksearch » : module des thèmes
+   * TemplateTrip, appelé comme le fait la barre de recherche du site.
+   */
+  ajaxSearchModule?: "ttblocksearch";
 }
 
 /** Fonctions JavaScript exécutées dans la page officielle (sans dépendance, sans accent de syntaxe moderne exotique). */
@@ -73,48 +79,97 @@ const readCart = async () => {
 };
 `;
 
-function searchExpression(query: string, limit: number, linkSelector: string | undefined): string {
+function searchExpression(query: string, limit: number, linkSelector: string | undefined, ajaxSearchModule: PrestashopOptions["ajaxSearchModule"]): string {
   return `(async () => {
     ${PRELUDE}
     const query = ${JSON.stringify(query)};
     const limit = ${limit};
-    const searchPath = (window.prestashop && prestashop.urls && prestashop.urls.pages && prestashop.urls.pages.search) || (location.origin + "/recherche");
-    const url = new URL(searchPath, location.origin);
-    url.searchParams.set("controller", "search");
-    url.searchParams.set("s", query);
-    url.searchParams.set("resultsPerPage", String(limit));
-    const response = await fetch(url.toString(), { credentials: "include" });
-    if (!response.ok) throw new Error("Recherche HTTP " + response.status);
-    const html = await response.text();
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const articles = Array.prototype.slice.call(doc.querySelectorAll("article.js-product-miniature, article.product-miniature, .js-product-miniature"));
-    if (!articles.length) {
-      const emptyMarker = doc.querySelector(".page-not-found, #search_filters_wrapper, #js-product-list, #products, .products") || /aucun produit|aucun r[ée]sultat|pas de r[ée]sultat|n.a pas [ée]t[ée] trouv/i.test(clean(doc.body && doc.body.textContent).slice(0, 6000));
-      if (!emptyMarker) throw new Error("Contrat liste produits absent");
-      return [];
+    const ajaxSearchModule = ${JSON.stringify(ajaxSearchModule ?? null)};
+    let items;
+    if (ajaxSearchModule === "ttblocksearch") {
+      const response = await fetch(location.origin + "/modules/ttblocksearch/controller_ajax_search.php", {
+        method: "POST", credentials: "include",
+        headers: { "content-type": "application/x-www-form-urlencoded; charset=UTF-8", "x-requested-with": "XMLHttpRequest" },
+        body: new URLSearchParams({ queryString: query, id_Cat: "all" }).toString(),
+      });
+      if (!response.ok) throw new Error("Recherche HTTP " + response.status);
+      const doc = new DOMParser().parseFromString(await response.text(), "text/html");
+      const container = doc.querySelector(".content-ajax-search");
+      if (!container) throw new Error("Contrat recherche ttblocksearch absent");
+      const cards = Array.prototype.slice.call(container.querySelectorAll(".search-product-item"));
+      if (!cards.length) {
+        if (container.querySelector(".noresult")) return [];
+        throw new Error("Contrat recherche ttblocksearch absent");
+      }
+      items = cards.slice(0, limit).map((card) => {
+        const link = card.querySelector(".product-name a, a.product_img_link");
+        const href = link ? new URL(link.getAttribute("href"), location.origin).href : null;
+        const id = href && href.match(/\\/(\\d+)-[^/]*\\.html/);
+        const price = [".current-price", ".price", ".product-price"].map((selector) => card.querySelector(selector)).find((element) => element && clean(element.textContent)) || null;
+        const regular = card.querySelector(".regular-price, .old-price");
+        return {
+          id_product: id ? id[1] : null,
+          id_product_attribute: "0",
+          name: clean((link && (link.getAttribute("title") || link.textContent)) || ""),
+          url: href,
+          price: price ? clean(price.textContent) : null,
+          regular_price: regular ? clean(regular.textContent) : null,
+          unit_price: null,
+          brand: null,
+          flags: [],
+          button: "absent",
+          availability: null,
+        };
+      });
+    } else {
+      const searchPath = (window.prestashop && prestashop.urls && prestashop.urls.pages && prestashop.urls.pages.search) || (location.origin + "/recherche");
+      const url = new URL(searchPath, location.origin);
+      url.searchParams.set("controller", "search");
+      url.searchParams.set("s", query);
+      url.searchParams.set("resultsPerPage", String(limit));
+      const response = await fetch(url.toString(), { credentials: "include" });
+      if (!response.ok) throw new Error("Recherche HTTP " + response.status);
+      // Une recherche renvoyée vers l’accueil ne donne pas de résultats : les
+      // produits mis en avant de la page d’arrivée ne sont jamais lus comme tels.
+      if (response.redirected) {
+        const landed = new URL(response.url);
+        if (!landed.searchParams.get("s") && !landed.searchParams.get("search_query")) throw new Error("Recherche redirigée vers " + landed.pathname + " sans résultats");
+      }
+      const html = await response.text();
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const articles = Array.prototype.slice.call(doc.querySelectorAll("article.js-product-miniature, article.product-miniature, .js-product-miniature"));
+      if (!articles.length) {
+        const emptyMarker = doc.querySelector(".page-not-found, #search_filters_wrapper, #js-product-list, #products, .products") || /aucun produit|aucun r[ée]sultat|pas de r[ée]sultat|n.a pas [ée]t[ée] trouv/i.test(clean(doc.body && doc.body.textContent).slice(0, 6000));
+        if (!emptyMarker) throw new Error("Contrat liste produits absent");
+        return [];
+      }
+      items = articles.slice(0, limit).map((article) => {
+        const link = article.querySelector(${JSON.stringify(linkSelector ? linkSelector + ", " : "")} + ".product-title a, h2 a, h3 a, a.product-thumbnail, a[href$='.html']");
+        // Prix actuel d'abord : une vignette en promotion n'a pas de « .price » et
+        // son bloc « .product-price » réunit la remise, le prix actuel et l'ancien.
+        const price = [".product-price-and-shipping .price", ".current-price", ".price", ".product-price"]
+          .map((selector) => article.querySelector(selector))
+          .find((element) => element && clean(element.textContent)) || null;
+        const regular = article.querySelector(".regular-price");
+        const unit = article.querySelector(".unit-price, .price-per-unit, .product-unit-price, .unity");
+        const title = article.querySelector(".product-title, .product-name, h2, h3");
+        const brand = article.querySelector(".product-brand, .manufacturer-name, .brand");
+        const button = article.querySelector("button.add-to-cart, .add-to-cart, [data-button-action='add-to-cart']");
+        return {
+          id_product: article.getAttribute("data-id-product"),
+          id_product_attribute: article.getAttribute("data-id-product-attribute") || "0",
+          name: clean((title && title.textContent) || (link && (link.getAttribute("title") || link.textContent))),
+          url: link ? link.href : null,
+          price: price ? clean(price.textContent) : null,
+          regular_price: regular ? clean(regular.textContent) : null,
+          unit_price: unit ? clean(unit.textContent) : null,
+          brand: brand ? clean(brand.textContent) : null,
+          flags: Array.prototype.map.call(article.querySelectorAll(".product-flags li, .product-flag"), (flag) => clean(flag.className + " " + flag.textContent)),
+          button: button ? (button.disabled || button.classList.contains("disabled") ? "disabled" : "enabled") : "absent",
+          availability: null,
+        };
+      });
     }
-    const items = articles.slice(0, limit).map((article) => {
-      const link = article.querySelector(${JSON.stringify(linkSelector ? linkSelector + ", " : "")} + ".product-title a, h2 a, h3 a, a.product-thumbnail, a[href$='.html']");
-      const price = article.querySelector(".product-price-and-shipping .price, .price, .product-price");
-      const regular = article.querySelector(".regular-price");
-      const unit = article.querySelector(".unit-price, .price-per-unit, .product-unit-price, .unity");
-      const title = article.querySelector(".product-title, .product-name, h2, h3");
-      const brand = article.querySelector(".product-brand, .manufacturer-name, .brand");
-      const button = article.querySelector("button.add-to-cart, .add-to-cart, [data-button-action='add-to-cart']");
-      return {
-        id_product: article.getAttribute("data-id-product"),
-        id_product_attribute: article.getAttribute("data-id-product-attribute") || "0",
-        name: clean((title && title.textContent) || (link && (link.getAttribute("title") || link.textContent))),
-        url: link ? link.href : null,
-        price: price ? clean(price.textContent) : null,
-        regular_price: regular ? clean(regular.textContent) : null,
-        unit_price: unit ? clean(unit.textContent) : null,
-        brand: brand ? clean(brand.textContent) : null,
-        flags: Array.prototype.map.call(article.querySelectorAll(".product-flags li, .product-flag"), (flag) => clean(flag.className + " " + flag.textContent)),
-        button: button ? (button.disabled || button.classList.contains("disabled") ? "disabled" : "enabled") : "absent",
-        availability: null,
-      };
-    });
     await Promise.all(items.filter((item) => item.button === "absent" && item.url).map(async (item) => {
       try {
         const page = await fetch(item.url, { credentials: "include" });
@@ -239,7 +294,7 @@ export function createPrestashopAdapter(options: PrestashopOptions): Adapter {
     validateProductUrl(url) {
       if (!inHosts(url)) throw new Error("Hors du site officiel configuré.");
     },
-    searchExpression: (_config: ShopConfig, query, limit) => searchExpression(query, limit, options.linkSelector),
+    searchExpression: (_config: ShopConfig, query, limit) => searchExpression(query, limit, options.linkSelector, options.ajaxSearchModule),
     normalizeSearch(raw): SummaryInput[] {
       if (!Array.isArray(raw)) throw new ContractChangedError("La recherche n’a pas retourné une liste de vignettes produit.");
       return raw.map((entry): SummaryInput => {
